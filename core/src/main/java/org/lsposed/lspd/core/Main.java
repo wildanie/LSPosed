@@ -85,8 +85,6 @@ public class Main {
             return;
         }
         installBootstrapHooks(isSystem, appDataDir);
-        Utils.logI("Loading modules for " + niceName + "/" + Process.myUid());
-        XposedInit.loadModules();
     }
 
     public static void forkAndSpecializePost(String appDataDir, String niceName, IBinder binder) {

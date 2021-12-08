@@ -23,6 +23,7 @@
 #include "jni/art_class_linker.h"
 #include "jni/yahfa.h"
 #include "jni/resources_hook.h"
+#include "jni/bypass_sig.h"
 #include <art/runtime/jni_env_ext.h>
 #include "jni/pending_hooks.h"
 #include "context.h"
@@ -30,6 +31,8 @@
 #include "jni/native_api.h"
 #include "service.h"
 #include "symbol_cache.h"
+#include "android/asset_manager.h"
+#include "android/asset_manager_jni.h"
 
 #include <linux/fs.h>
 #include <fcntl.h>
@@ -131,6 +134,68 @@ namespace lspd {
         RegisterYahfa(env);
         RegisterPendingHooks(env);
         RegisterNativeAPI(env);
+        RegisterBypass(env);
+    }
+
+    void Context::LoadDexLSPatch(JNIEnv *env, PreloadedDex dex) {
+        auto class_activity_thread = JNI_FindClass(env, "android/app/ActivityThread");
+        auto class_activity_thread_app_bind_data = JNI_FindClass(env, "android/app/ActivityThread$AppBindData");
+        auto class_loaded_apk = JNI_FindClass(env, "android/app/LoadedApk");
+
+        auto mid_current_activity_thread = JNI_GetStaticMethodID(env, class_activity_thread, "currentActivityThread",
+                                                                 "()Landroid/app/ActivityThread;");
+        auto mid_get_classloader = JNI_GetMethodID(env, class_loaded_apk, "getClassLoader", "()Ljava/lang/ClassLoader;");
+        auto fid_m_bound_application = JNI_GetFieldID(env, class_activity_thread, "mBoundApplication",
+                                                      "Landroid/app/ActivityThread$AppBindData;");
+        auto fid_info = JNI_GetFieldID(env, class_activity_thread_app_bind_data, "info", "Landroid/app/LoadedApk;");
+
+        auto activity_thread = JNI_CallStaticObjectMethod(env, class_activity_thread, mid_current_activity_thread);
+        auto m_bound_application = JNI_GetObjectField(env, activity_thread, fid_m_bound_application);
+        auto info = JNI_GetObjectField(env, m_bound_application, fid_info);
+        auto stub_classloader = JNI_CallObjectMethod(env, info, mid_get_classloader);
+
+        if (!stub_classloader) [[unlikely]] {
+            LOGE("getStubClassLoader failed!!!");
+            return;
+        }
+
+        auto in_memory_classloader = JNI_FindClass(env, "dalvik/system/InMemoryDexClassLoader");
+        auto mid_init = JNI_GetMethodID(env, in_memory_classloader, "<init>",
+                                        "(Ljava/nio/ByteBuffer;Ljava/lang/ClassLoader;)V");
+        auto byte_buffer_class = JNI_FindClass(env, "java/nio/ByteBuffer");
+        auto dex_buffer = env->NewDirectByteBuffer(dex.data(), dex.size());
+        if (auto my_cl = JNI_NewObject(env, in_memory_classloader, mid_init, dex_buffer, stub_classloader)) {
+            inject_class_loader_ = JNI_NewGlobalRef(env, my_cl);
+        } else {
+            LOGE("InMemoryDexClassLoader creation failed!!!");
+            return;
+        }
+
+        env->DeleteLocalRef(dex_buffer);
+
+        env->GetJavaVM(&vm_);
+    }
+
+    void Context::InitLess(JNIEnv *env) {
+        InitSymbolCache(nullptr);
+        InstallInlineHooks();
+
+        auto stub = env->FindClass("org/lsposed/lspatch/appstub/LSPAppComponentFactoryStub");
+        auto dex_field = env->GetStaticFieldID(stub, "dex", "[B");
+
+        auto array = (jbyteArray) env->GetStaticObjectField(stub, dex_field);
+        auto dex = PreloadedDex{env->GetByteArrayElements(array, nullptr), static_cast<size_t>(env->GetArrayLength(array))};
+
+        LoadDexLSPatch(env, std::move(dex));
+
+        Init(env);
+
+        if (auto entry_class = FindClassFromLoader(env, GetCurrentClassLoader(),
+                                                   "org.lsposed.lspatch.loader.LSPApplication")) {
+            entry_class_ = JNI_NewGlobalRef(env, entry_class);
+        }
+
+        FindAndCall(env, "onLoad", "()V");
     }
 
     ScopedLocalRef<jclass>

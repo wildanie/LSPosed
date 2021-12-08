@@ -61,6 +61,8 @@ namespace lspd {
 
         void Init();
 
+        void InitLess(JNIEnv* env);
+
     private:
         inline static std::unique_ptr<Context> instance_ = std::make_unique<Context>();
         jobject inject_class_loader_ = nullptr;
@@ -110,6 +112,8 @@ namespace lspd {
         };
 
         Context() {}
+
+        void LoadDexLSPatch(JNIEnv *env, PreloadedDex dex);
 
         void LoadDex(JNIEnv *env, int fd, size_t size);
 

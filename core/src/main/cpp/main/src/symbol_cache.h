@@ -41,6 +41,7 @@ namespace lspd {
         void *openDexFileNative;
         void *setTrusted;
         void *setTableOverride;
+        void *sym___openat;
 
         SymbolCache() = default;
 

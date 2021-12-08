@@ -76,6 +76,7 @@ namespace lspd {
         auto ok = FindLibArt();
         symbol_cache->do_dlopen = SandHook::ElfImg("/linker").getSymbAddress<void *>(
                 "__dl__Z9do_dlopenPKciPK17android_dlextinfoPKv");
+        symbol_cache->sym___openat = SandHook::ElfImg("libc.so").getSymbAddress<void *>("__openat");
         if (!ok) [[unlikely]] {
             GetArt().reset();
             LOGE("Init symbol cache failed");
