@@ -152,7 +152,7 @@ public class ScopeAdapter extends EmptyStateRecyclerView.EmptyStateAdapter<Scope
             }
         }
         if (preferences.getBoolean("filter_modules", true)) {
-            if (info.applicationInfo.metaData != null && info.applicationInfo.metaData.containsKey("xposedminversion")) {
+            if (info.applicationInfo.metaData != null && info.applicationInfo.metaData.containsKey("sqdminversion")) {
                 return true;
             }
         }
